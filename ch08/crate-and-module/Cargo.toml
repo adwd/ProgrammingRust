@@ -1,0 +1,25 @@
+[package]
+name = "fern_sim"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members = ["fern_sub"]
+
+[dependencies]
+fern_sub = { path = "./fern_sub" }
+# この書き方でSemver的に破壊的変更がない最新のバージョンを使う
+image = "0.13.0"
+# でもCargo.lockで固定される
+# cargo updateで更新される
+
+# image = { git = "https://github.com/test/test.git", rev = "1234def" }
+# image = { path = "path/to/image" }
+# image = { path = "path/to/image", version = "0.13.0" } こう書くとローカルではpath、クレートのユーザーはversionを使う
+# image = "=0.13.0"
+# image = ">=1.0.0"
+# image = ">=1.0.0 <2.0.0"
+# image = "<=1.0.0"
+# image = "*"
