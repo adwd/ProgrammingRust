@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 fn main() {
     // 列挙型は他の言語にもあるが、Rustは値を持てるので強力
     enum Color {
@@ -68,24 +70,22 @@ fn main() {
     }
 
     // ジェネリック列挙型
-    {
-        enum Option<T> {
-            None,
-            Some(T),
-        }
-
-        enum BinaryTree<T> {
-            Empty,
-            NonEmpty(Box<TreeNode<T>>),
-        }
-
-        struct TreeNode<T> {
-            value: T,
-            left: BinaryTree<T>,
-            right: BinaryTree<T>,
-        }
-        // メモリ配置から考えてコードに落とし込むといいらしい
+    enum Option<T> {
+        None,
+        Some(T),
     }
+
+    enum BinaryTree<T> {
+        Empty,
+        NonEmpty(Box<TreeNode<T>>),
+    }
+
+    struct TreeNode<T> {
+        value: T,
+        left: BinaryTree<T>,
+        right: BinaryTree<T>,
+    }
+    // メモリ配置から考えてコードに落とし込むといいらしい
 
     // パターン
     {
@@ -103,12 +103,105 @@ fn main() {
                 RoughTime::InTheFuture(TimeUnit::Day, ref count) => "参照、mutも".to_string(),
                 // (tuple, t2), [a, b, c], [first, _, third], [first, .., last], []
                 // Color(r, g, b), Point {x, y}, Card { suit: Clubs, rank: n }
+                // Account { name, id, .. }
                 // &v, &(k, v) 参照型にのみマッチ
                 // 'a' | 'A', Some("right" | "left") Orパターン
+                // _ ワイルドカードパターン
                 // ガード式
                 RoughTime::InTheFuture(_, count) if count > 100 => "参照、mutも".to_string(),
                 RoughTime::InTheFuture(unit, n) => format!("{} {} from now", n, unit.plural()),
             }
         }
+
+        #[derive(Debug)]
+        struct Account {
+            name: String,
+            age: u8,
+        }
+        fn print(str: &str) {
+            println!("{}", str);
+        }
+        let mut a = Account {
+            name: "Alice".to_string(),
+            age: 20,
+        };
+        match &mut a {
+            // Account { name, age } => {
+            //     print(&name);
+            //     // borrow of partially moved value: `a` partial move occurs because `a.name`
+            //     // has type `std::string::String`, which does not implement the `Copy` trait
+            //     println!("{:?}", a);
+            // }
+            Account { ref name, age: 10 } => {
+                print(name);
+                println!("{:?}", a);
+            }
+            Account { ref mut name, .. } => {
+                name.push_str(" pushed");
+                print(name);
+                println!("{:?}", a);
+            }
+        }
+
+        let chars = vec!['a', 'b', 'c'];
+        match &chars.into_iter().peekable().peek() {
+            Some(&c) => println!("{}", c),
+            _ => println!("not b"),
+        }
+
+        let c = 'x';
+        match c {
+            '0'..='9' => println!("0-9"),
+            'a'..='z' | 'A'..='F' => println!("a-f"),
+            char @ 'G'..='Z' => println!("{}", char),
+            _ => println!("other"),
+        }
+        let Account { name, age } = a;
+        fn _d((x, y): (i32, i32)) -> i32 {
+            x + y
+        }
+        for (k, v) in HashMap::<String, i32>::new() {
+            println!("{}:{}", k, v);
+        }
+        // An ordered collection of `T`s.
+        #[derive(Debug)]
+        enum BinaryTree<T> {
+            Empty,
+            NonEmpty(Box<TreeNode<T>>),
+        }
+
+        // A part of a BinaryTree.
+        #[derive(Debug)]
+        struct TreeNode<T> {
+            element: T,
+            left: BinaryTree<T>,
+            right: BinaryTree<T>,
+        }
+
+        impl<T: Ord> BinaryTree<T> {
+            fn add(&mut self, value: T) {
+                match self {
+                    BinaryTree::Empty => {
+                        *self = BinaryTree::NonEmpty(Box::new(TreeNode {
+                            element: value,
+                            left: BinaryTree::Empty,
+                            right: BinaryTree::Empty,
+                        }))
+                    }
+                    BinaryTree::NonEmpty(ref mut node) => {
+                        if value <= node.element {
+                            node.left.add(value);
+                        } else {
+                            node.right.add(value);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut tree = BinaryTree::Empty;
+        tree.add("test");
+        tree.add("b");
+        print!("{:?}", tree);
     }
 }
