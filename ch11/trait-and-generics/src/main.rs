@@ -251,4 +251,83 @@ fn main() {
 
         // イテレータ以外にも、Taskトレイトは関連するOutput型がある
     }
+
+    // impl Trait
+    {
+        // ジェネリックタイプが多いと読みづらい
+        use std::iter;
+        use std::vec::IntoIter;
+        fn cyclical_zip(
+            v: Vec<u8>,
+            u: Vec<u8>,
+        ) -> iter::Cycle<iter::Chain<IntoIter<u8>, IntoIter<u8>>> {
+            v.into_iter().chain(u.into_iter()).cycle()
+        }
+
+        // トレイとオブジェクトで置き換える事はできるが、動的ディスパッチとヒープメモリの確保のトレードオフがある
+        fn cyclical_zip2(v: Vec<u8>, u: Vec<u8>) -> Box<dyn Iterator<Item = u8>> {
+            Box::new(v.into_iter().chain(u.into_iter()).cycle())
+        }
+        // impl Traitで返り値の型として実装しているトレイトだけを指定することができる
+        fn cyclical_zip3(v: Vec<u8>, u: Vec<u8>) -> impl Iterator<Item = u8> {
+            v.into_iter().chain(u.into_iter()).cycle()
+        }
+    }
+
+    // トレイトの関連定数
+    {
+        trait Greet {
+            const GREETING: &'static str = "Hello";
+            fn greet(&self) -> String;
+        }
+
+        // 宣言するだけで値を指定しないことができる
+        trait Float {
+            const ZERO: Self;
+            const ONE: Self;
+        }
+
+        impl Float for f32 {
+            const ZERO: f32 = 0.0;
+            const ONE: f32 = 1.0;
+        }
+
+        use std::ops::Add;
+        fn add_one<T: Float + Add<Output = T>>(value: T) -> T {
+            value + T::ONE
+        }
+    }
+
+    // 制約のリバースエンジニアリング
+    {
+        fn dot(v1: &[i64], v2: &[i64]) -> i64 {
+            let mut total = 0;
+            for i in 0..v1.len() {
+                total += v1[i] * v2[i];
+            }
+            total
+        }
+
+        use std::ops::{Add, Mul};
+        fn dot2<N>(v1: &[N], v2: &[N]) -> N
+        where
+            N: Add<Output = N> + Mul<Output = N> + Default + Copy,
+        {
+            let mut total = N::default();
+            for i in 0..v1.len() {
+                total = total + v1[i] * v2[i];
+            }
+            total
+        }
+
+        use num::Num;
+        fn dot3<N: Num + Copy>(v1: &[N], v2: &[N]) -> N {
+            let mut total = N::zero();
+            for i in 0..v1.len() {
+                total = total + v1[i] * v2[i];
+            }
+            total
+        }
+        // ジェネリックプログラミングでは正しいトレイトを使うことがすべて
+    }
 }
