@@ -115,5 +115,48 @@ fn main() {
     // ハッシュ
     {
         // ある値に対して参照は参照先と同じハッシュ値を返さなければならない
+
+        #[derive(Clone, PartialEq, Eq, Hash)]
+        enum MuseumNumber {}
+        #[derive(Clone, PartialEq, Eq, Hash)]
+        enum Curture {}
+        #[derive(Clone, PartialEq, Eq, Hash)]
+        enum RoughTime {}
+        struct Artifact {
+            id: MuseumNumber,
+            name: String,
+            cultures: Vec<Curture>,
+            date: RoughTime,
+        }
+
+        impl PartialEq for Artifact {
+            fn eq(&self, other: &Artifact) -> bool {
+                self.id == other.id
+            }
+        }
+
+        impl Eq for Artifact {}
+
+        use std::hash::{Hash, Hasher};
+        impl Hash for Artifact {
+            fn hash<H: Hasher>(&self, hasher: &mut H) {
+                // こうしないとHashSet<Artifact>が正しく動作しない。ハッシュテーブルでは常にa == bならばhash(a) == hash(b)でなければならない
+                self.id.hash(hasher)
+            }
+        }
+        let _collection = HashSet::<Artifact>::new();
+    }
+
+    // ハッシュアルゴリズムのカスタマイズ
+    {
+        // RustのデフォルトハッシュアルゴリズムはSipHash-1-3
+        // これほど高度なアルゴリズムが必要じゃない場合は高速なものに差し替えられる
+        // fnv = "1.0"
+        // use fnv::{FnvHashMap, FnvHashSet};
+    }
+
+    // 標準コレクションを超えて
+    {
+        //
     }
 }
