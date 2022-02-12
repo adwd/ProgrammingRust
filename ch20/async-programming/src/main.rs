@@ -227,7 +227,75 @@ fn main() {
                     format!("Your splendid string; {string}")
                 }
 
-                task::spawn(reluctant());
+                // future cannot be sent between threads safely within `impl std::future::Future<Output = std::string::String>`,
+                // the trait `std::marker::Send` is not implemented for `std::rc::Rc<std::string::String>`
+                // task::spawn(reluctant());
+            }
+
+            // 長時間の計算: yield_nowとspawn_blocking
+            async fn very_heavu_computation() {
+                // 途中で他の非同期タスクにポーリングが回るようにする
+                async_std::task::yield_now().await;
+            }
+            async fn very_heavu_computation2() {
+                async_std::task::spawn_blocking(|| {
+                    // この非同期タスクは専用のスレッドで実行される
+                });
+            }
+
+            // パスワードの検証
+            async fn verify_password(
+                password: &str,
+                hash: &str,
+                key: &str,
+            ) -> Result<bool, argonautica::Error> {
+                // クロージャを'staticにするために引数のコピーを作る
+                let password = password.to_string();
+                let hash = hash.to_string();
+                let key = key.to_string();
+
+                async_std::task::spawn_blocking(move || {
+                    argonautica::Verifier::default()
+                        .with_hash(hash)
+                        .with_password(password)
+                        .with_secret_key(key)
+                        .verify()
+                })
+                .await
+            }
+
+            // 非同期機構の設計
+            // JavaScriptやC#では呼び出されるとともにシステム組み込みのイベントループが処理するが、
+            // Rustではその役割はエグゼキュータに任されている
+
+            // 本当に非同期なHTTPクライアント
+            async fn many_requests3(urls: &[String]) -> Vec<Result<String, surf::Error>> {
+                let client = surf::Client::new();
+
+                let mut handles = vec![];
+                for url in urls {
+                    let request = client.get(&url).recv_string();
+                    handles.push(async_std::task::spawn(request));
+                }
+
+                let mut results = vec![];
+                for handle in handles {
+                    results.push(handle.await);
+                }
+
+                results
+            }
+
+            fn run_requests() {
+                let requests = &["http::example.com".to_string()];
+
+                let results = async_std::task::block_on(many_requests3(requests));
+                for result in results {
+                    match result {
+                        Ok(response) => println!("*** {}\n", response),
+                        Err(err) => eprintln!("error: {}\n", err),
+                    }
+                }
             }
         }
     }
