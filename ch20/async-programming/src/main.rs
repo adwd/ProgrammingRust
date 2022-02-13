@@ -299,4 +299,176 @@ fn main() {
             }
         }
     }
+
+    // 原始的なFutureとエグゼキュータ: Futureを再度ポーリングするべきはいつなのか？
+    {
+        // Futureは再度ポーリングする要求をwakerコールバックを実行して知らせる
+
+        use std::future::Future;
+        use std::pin::Pin;
+        use std::task::Context;
+        use std::task::{Poll, Waker};
+
+        struct MyPrimitiveFuture {
+            // ...
+            waker: Option<Waker>,
+        }
+
+        impl Future for MyPrimitiveFuture {
+            type Output = ();
+
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                // ...
+
+                let is_future_ready = false;
+                if is_future_ready {
+                    return Poll::Ready(());
+                }
+
+                // ...
+                // 値の準備ができたら
+                if let Some(waker) = self.waker.take() {
+                    waker.wake();
+                }
+
+                // 後で使うためにWakerを保持しておく
+                self.waker = Some(cx.waker().clone());
+                Poll::Pending
+            }
+        }
+
+        // ウェイカの起動: spawn_blocking
+        // 与えられたクロージャを別のスレッドでjっこうしてその返り値のFutureを返す
+        fn spawn_blocking<T, F>(closure: F) -> SpawnBlocking<T>
+        where
+            F: FnOnce() -> T,
+            F: Send + 'static,
+            T: Send + 'static,
+        {
+            let inner = Arc::new(Mutex::new(Shared {
+                value: None,
+                waker: None,
+            }));
+
+            std::thread::spawn({
+                let inner = inner.clone();
+                move || {
+                    let value = closure();
+
+                    let maybe_waker = {
+                        let mut guard = inner.lock().unwrap();
+                        guard.value = Some(value);
+                        guard.waker.take()
+                    };
+
+                    if let Some(waker) = maybe_waker {
+                        waker.wake();
+                    }
+                }
+            });
+
+            SpawnBlocking(inner)
+        }
+
+        use std::sync::{Arc, Mutex};
+
+        struct SpawnBlocking<T>(Arc<Mutex<Shared<T>>>);
+
+        struct Shared<T> {
+            value: Option<T>,
+            waker: Option<Waker>,
+        }
+
+        impl<T: Send> Future for SpawnBlocking<T> {
+            type Output = T;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
+                let mut guard = self.0.lock().unwrap();
+                if let Some(value) = guard.value.take() {
+                    return Poll::Ready(value);
+                }
+
+                guard.waker = Some(cx.waker().clone());
+                Poll::Pending
+            }
+        }
+
+        // block_onの実装
+        use crossbeam::sync::Parker;
+        use futures_lite::pin;
+        use waker_fn::waker_fn;
+
+        fn block_on<F: Future>(future: F) -> F::Output {
+            // parkerは対応するunparkerが呼び出されるまでスレッドをブロックする
+            let parker = Parker::new();
+            let unparker = parker.unparker().clone();
+            // unparkするwakerとそれを持つContext
+            let waker = waker_fn(move || unparker.unpark());
+            let mut context = Context::from_waker(&waker);
+
+            // FutureのPinを作る
+            pin!(future);
+
+            loop {
+                match future.as_mut().poll(&mut context) {
+                    Poll::Ready(value) => return value,
+                    Poll::Pending => parker.park(),
+                }
+            }
+        }
+    }
+
+    // ピン留め
+    {
+        // Pin型
+
+        use async_std::io::prelude::*;
+        use async_std::{io, net};
+
+        async fn fetch_string(address: &str) -> io::Result<String> {
+            // 1
+            let mut socket = net::TcpStream::connect(address).await?; // 2
+            let mut buf = String::new();
+            socket.read_to_string(&mut buf).await?; // 3
+            Ok(buf)
+        }
+        // 1,2,3は再開点(resumption point)で非同期関数コードが実行をサスペンドするかもしれない場所
+        // ポーリング中のFutureを移動するとダングリングポインタができてしまう
+        // ポーリング前の1の段階ではFutureが保持している変数への借用は発生しない
+        // このことからFutureには2つのライフステージがあることがわかる
+        // 1. Futureが作成された際に始まる。この時点では安全に移動できる
+        // 2. Futureが初めてポーリングされた際に始まる。安全には移動できない
+        // 第1ステージの間は移動しても安全なのでblock_onやspawnにFutureを渡したりraceやfuseのアダプタを呼ぶことができる
+        // 第2ステージではFutureをPollingする。pollメソッドの引数はFutureをPin<&mut Self>で受け取る
+        // Pinはポインタ型(&mut self)に対するラッパでポインタの使われ方を制限し、参照先(Self)に今後移動しないことを保証する
+        // なのでFutureにポーリングする際はPinでラップしなければならない
+        pub struct Pin2<P> {
+            pointer: P,
+        }
+        // Pin<&mut T>, Pin<Box<T>>
+        // Futureへのピン留めされたポインタを得るにはFutureの所有権を手放すしかない
+        // ピン留めされたポインタは移動できるが、その中の参照先は移動しない
+        // pin.as_mutでピン留めされたポインタ所有権を手放さずにポーリングできる
+
+        // Unpinトレイト
+        use std::pin::Pin;
+        let mut string = "Pinned?".to_string();
+        let mut pinned = Pin::new(string);
+
+        // pinned.push_str(" Not");
+    }
+
+    // 非同期コードはどのような場合に使うべきか？
+    {
+        // 非同期コードを書くのはマルチスレッドコードを書くよりも難しい
+        // 非同期コードはIOに適している、マルチスレッドコードよりも書くのが簡単と言われるが詳細な検証には耐えられない
+        // 非同期タスクは
+        // - メモリ使用量が少ない: Linuxのスレッドは最小20KiBだがチャットサーバのFutureは数百バイト
+        // - 生成が高速: Linuxのスレッドは15μsほどかかるが非同期タスク300ns程度
+        // - コンテキストスイッチが高速: Linuxのスレッドは1.7μsほどかかるが非同期タスク0.2μs程度
+
+        // 多数の接続を処理したり、小さいタスクをさばくようなチャットサーバの場合非同期コードが適していると言える
+        // それ以外の重い計算やIOをずっと待つ場合はメリットがあるとは言えない
+        // 性能を計測してチューニングするのにマルチスレッドプログラムに対してはツールがあるが非同期タスクにはない
+    }
 }

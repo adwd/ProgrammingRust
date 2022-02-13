@@ -8,4 +8,7 @@ edition = "2021"
 [dependencies]
 argonautica = "0.2.0"
 async-std = { version = "1.10.0", features = ["unstable"]}
+crossbeam = "0.8.1"
+futures-lite = "1.12.0"
 surf = "2.3.2"
+waker-fn = "1.1.0"
