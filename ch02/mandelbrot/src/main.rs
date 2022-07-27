@@ -1,6 +1,6 @@
 use std::{env, fs::File, str::FromStr};
 
-use image::{png::PNGEncoder, ColorType};
+use image::{codecs::png::PngEncoder, ColorType, ImageEncoder, ImageError};
 use num::Complex;
 
 fn complex_square_add_loop(c: Complex<f64>) {
@@ -50,10 +50,7 @@ fn test_parse_pair() {
 }
 
 fn parse_complex(s: &str) -> Option<Complex<f64>> {
-    match parse_pair(s, ',') {
-        Some((re, im)) => Some(Complex { re, im }),
-        None => None,
-    }
+    parse_pair(s, ',').map(|(re, im)| Complex { re, im })
 }
 
 #[test]
@@ -119,15 +116,11 @@ fn render(
     }
 }
 
-fn write_image(
-    filename: &str,
-    pixels: &[u8],
-    bounds: (usize, usize),
-) -> Result<(), std::io::Error> {
+fn write_image(filename: &str, pixels: &[u8], bounds: (usize, usize)) -> Result<(), ImageError> {
     let output = File::create(filename)?;
 
-    let encoder = PNGEncoder::new(output);
-    encoder.encode(pixels, bounds.0 as u32, bounds.1 as u32, ColorType::Gray(8))?;
+    let encoder = PngEncoder::new(output);
+    encoder.write_image(pixels, bounds.0 as u32, bounds.1 as u32, ColorType::L8)?;
 
     Ok(())
 }
